@@ -1,0 +1,56 @@
+{
+      "url": "https://api.flux-ai.io/v1/generate",
+      "method": "POST",
+      "position": [850, 250]
+    },
+    {
+      "parameters": {
+        "toEmail": "{{ $json['email'] }}",
+        "subject": "Sua resposta está pronta",
+        "body": "{{ $json['resposta'] }}<br><img src='{{ $json['imagem_url'] }}'>"
+      },
+      "name": "Gmail - Enviar",
+      "type": "n8n-nodes-base.gmail",
+      "position": [1050, 300]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          { "node": "Ollama - Classificação", "type": "main", "index": 0 },
+          { "node": "Airtable - Histórico", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Ollama - Classificação": {
+      "main": [
+        [
+          { "node": "Gemini - Geração", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Airtable - Histórico": {
+      "main": [
+        [
+          { "node": "Gemini - Geração", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Gemini - Geração": {
+      "main": [
+        [
+          { "node": "Flux AI - Geração de Imagem", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Flux AI - Geração de Imagem": {
+      "main": [
+        [
+          { "node": "Gmail - Enviar", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  }
+}
+
