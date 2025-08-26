@@ -1,0 +1,368 @@
+# app_queen.py
+import sys
+import os
+import sqlite3
+import subprocess
+import requests
+import json
+from datetime import datetime
+from PyQt6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QTextEdit, QPushButton, QLabel, QFileDialog, QMessageBox,
+    QTabWidget, QLineEdit, QComboBox
+)
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QPixmap, QFont
+import speech_recognition as sr
+from pydub import AudioSegment
+from pydub.playback import play
+import threading
+import pyttsx3
+
+# --- CONFIGURAÇÃO ---
+OLLAMA_URL = "http://localhost:11434/api/generate"
+RECORDING_FILE = "temp_recording.wav"
+
+class WorkerThread(QThread):
+    finished = pyqtSignal(str)
+    error = pyqtSignal(str)
+
+    def __init__(self, fn, *args, **kwargs):
+        super().__init__()
+        self.fn = fn
+        self.args = args
+        self.kwargs = kwargs
+
+    def run(self):
+        try:
+            result = self.fn(*self.args, **self.kwargs)
+            self.finished.emit(result)
+        except Exception as e:
+            self.error.emit(str(e))
+
+class QueenAgent:
+    def __init__(self):
+        self.db = sqlite3.connect("queen_memory.db")
+        self.create_tables()
+        self.tts_engine = pyttsx3.init()
+        self.tts_engine.setProperty('rate', 180)
+
+    def create_tables(self):
+        self.db.execute("""
+            CREATE TABLE IF NOT EXISTS memories (
+                id INTEGER PRIMARY KEY,
+                type TEXT,
+                input TEXT,
+                response TEXT,
+                context TEXT,
+                timestamp TEXT
+            )
+        """)
+        self.db.commit()
+
+    def think(self, prompt, context=""):
+        cursor = self.db.execute(
+            "SELECT response FROM memories WHERE input LIKE ? OR context LIKE ? ORDER BY id DESC LIMIT 3",
+            (f"%{prompt[:15]}%", f"%{context[:15]}%")
+        )
+        history = "\n".join([f"Exemplo: {row[0]}" for row in cursor.fetchall()])
+
+        payload = {
+            "model": "phi-3:mini",
+            "prompt": f"""
+            Você é a Queen, uma mentora sábia, com empatia e clareza.
+            Use este histórico para responder com mais inteligência:
+            {history}
+
+            Pergunta: {prompt}
+            Resposta (sem jargões, como se estivesse ao lado da pessoa):
+            """,
+            "stream": False
+        }
+
+        try:
+            response = requests.post(OLLAMA_URL, json=payload)
+            answer = response.json()["response"].strip()
+
+            self.db.execute(
+                "INSERT INTO memories (type, input, response, context, timestamp) VALUES (?, ?, ?, ?, ?)",
+                ("text", prompt, answer, context, datetime.now().isoformat())
+            )
+            self.db.commit()
+            return answer
+        except Exception as e:
+            return f"Erro ao pensar: {e}"
+
+    def speak_text(self, text):
+        """Converte texto em voz usando pyttsx3"""
+        try:
+            self.tts_engine.say(text)
+            self.tts_engine.runAndWait()
+        except Exception as e:
+            print(f"Erro no TTS: {e}")
+
+    def listen_microphone(self):
+        """Captura áudio do microfone e transcreve"""
+        r = sr.Recognizer()
+        with sr.Microphone() as source:
+            try:
+                audio = r.listen(source, timeout=5, phrase_time_limit=10)
+                with open(RECORDING_FILE, "wb") as f:
+                    f.write(audio.get_wav_data())
+                text = r.recognize_google(audio, language="pt-BR")
+                return text
+            except sr.WaitTimeoutError:
+                return "Nenhum áudio detectado."
+            except sr.UnknownValueError:
+                return "Não entendi o que foi dito."
+            except Exception as e:
+                return f"Erro: {e}"
+
+    def sync_to_github(self):
+        """Sincroniza com o GitHub"""
+        try:
+            subprocess.run(["git", "add", "."], check=True)
+            subprocess.run(["git", "commit", "-m", "Auto-sync: atualização do Cérebro Digital"], capture_output=True)
+            result = subprocess.run(["git", "push"], capture_output=True, text=True)
+            return result.stdout if result.returncode == 0 else f"Erro: {result.stderr}"
+        except Exception as e:
+            return f"Erro: {e}"
+
+    def import_to_n8n(self, workflow_json):
+        """Importa workflow para o n8n local"""
+        try:
+            url = "http://localhost:5678/rest/workflows"
+            headers = {"Content-Type": "application/json"}
+            payload = {
+                "name": "Workflow da Queen",
+                "nodes": json.loads(workflow_json)["nodes"],
+                "connections": json.loads(workflow_json)["connections"]
+            }
+            response = requests.post(url, json=payload, headers=headers)
+            return str(response.json())
+        except Exception as e:
+            return f"Erro: {e}"
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.agent = QueenAgent()
+        self.is_running = True
+        self.setWindowTitle("🧠 Cérebro Digital da Queen")
+        self.setGeometry(100, 100, 900, 700)
+        self.setStyleSheet("background-color: #1e1e2e; color: #cdd6f4; font-family: Arial;")
+
+        container = QWidget()
+        layout = QVBoxLayout()
+
+        title = QLabel("🧠 Cérebro Digital da Queen")
+        title.setFont(QFont("Arial", 18, QFont.Weight.Bold))
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title)
+
+        # Botões de emergência
+        emergency_layout = QHBoxLayout()
+        btn_stop = QPushButton("🛑 Parar Tudo")
+        btn_stop.setStyleSheet("background: #e78284; color: black; font-weight: bold; padding: 8px;")
+        btn_stop.clicked.connect(self.emergency_stop)
+
+        btn_reset = QPushButton("🟢 Reiniciar")
+        btn_reset.setStyleSheet("background: #a6d189; color: black; font-weight: bold; padding: 8px;")
+        btn_reset.clicked.connect(self.reset_system)
+
+        emergency_layout.addWidget(btn_stop)
+        emergency_layout.addWidget(btn_reset)
+        layout.addLayout(emergency_layout)
+
+        # Abas
+        tabs = QTabWidget()
+        tabs.addTab(self.create_text_tab(), "💬 Texto")
+        tabs.addTab(self.create_voice_tab(), "🎤 Voz")
+        tabs.addTab(self.create_image_tab(), "🖼️ Imagem")
+        tabs.addTab(self.create_workflow_tab(), "⚙️ Workflow")
+        layout.addWidget(tabs)
+
+        container.setLayout(layout)
+        self.setCentralWidget(container)
+
+    def emergency_stop(self):
+        self.is_running = False
+        self.text_output.setText("🛑 Todas as ações foram interrompidas.")
+
+    def reset_system(self):
+        self.is_running = True
+        self.text_output.setText("🟢 Sistema reiniciado. Pronto para continuar.")
+
+    def create_text_tab(self):
+        widget = QWidget()
+        layout = QVBoxLayout()
+
+        self.text_input = QTextEdit()
+        self.text_input.setPlaceholderText("Digite sua pergunta ou comando...")
+        self.text_input.setStyleSheet("background: #313244; color: white; padding: 10px;")
+        layout.addWidget(self.text_input)
+
+        btn = QPushButton("✨ Pergunte à Queen")
+        btn.setStyleSheet("background: #89b4fa; color: black; padding: 10px; font-weight: bold;")
+        btn.clicked.connect(self.ask_text)
+        layout.addWidget(btn)
+
+        self.text_output = QTextEdit()
+        self.text_output.setReadOnly(True)
+        self.text_output.setStyleSheet("background: #313244; color: #b5e8e0; padding: 10px;")
+        layout.addWidget(self.text_output)
+
+        widget.setLayout(layout)
+        return widget
+
+    def ask_text(self):
+        if not self.is_running:
+            return
+        prompt = self.text_input.toPlainText().strip()
+        if not prompt:
+            return
+        self.text_output.setText("Queen está pensando...")
+        def task():
+            return self.agent.think(prompt)
+        self.run_in_thread(task, self.on_text_done)
+
+    def on_text_done(self, result):
+        self.text_output.setText(result)
+        self.agent.speak_text(result)
+
+    def create_voice_tab(self):
+        widget = QWidget()
+        layout = QVBoxLayout()
+
+        btn_mic = QPushButton("🎙️ Ouvir do Microfone")
+        btn_mic.clicked.connect(self.listen_with_mic)
+        layout.addWidget(btn_mic)
+
+        self.voice_output = QTextEdit()
+        self.voice_output.setReadOnly(True)
+        self.voice_output.setStyleSheet("background: #313244; color: #b5e8e0; padding: 10px;")
+        layout.addWidget(self.voice_output)
+
+        widget.setLayout(layout)
+        return widget
+
+    def listen_with_mic(self):
+        if not self.is_running:
+            return
+        self.voice_output.setText("🎧 Ouvindo...")
+        def task():
+            text = self.agent.listen_microphone()
+            if "Erro" not in text and "Nenhum áudio" not in text and "Não entendi" not in text:
+                reply = self.agent.think(text, context="transcrição de voz")
+                self.agent.speak_text(reply)
+                return f"Você disse: {text}\n\nQueen: {reply}"
+            return text
+        self.run_in_thread(task, self.on_voice_done)
+
+    def on_voice_done(self, result):
+        self.voice_output.setText(result)
+
+    def create_image_tab(self):
+        widget = QWidget()
+        layout = QVBoxLayout()
+        self.image_label = QLabel("Imagem")
+        self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.image_label.setStyleSheet("background: #313244; padding: 20px;")
+        self.image_label.setFixedSize(400, 300)
+        layout.addWidget(self.image_label)
+
+        btn_img = QPushButton("📁 Carregar Imagem")
+        btn_img.clicked.connect(self.load_image)
+        layout.addWidget(btn_img)
+
+        self.image_output = QTextEdit()
+        self.image_output.setReadOnly(True)
+        self.image_output.setStyleSheet("background: #313244; color: #b5e8e0; padding: 10px;")
+        layout.addWidget(self.image_output)
+
+        widget.setLayout(layout)
+        return widget
+
+    def load_image(self):
+        file, _ = QFileDialog.getOpenFileName(self, "Selecione uma imagem", "", "Imagens (*.png *.jpg *.jpeg)")
+        if file:
+            pixmap = QPixmap(file).scaled(400, 300, Qt.AspectRatioMode.KeepAspectRatio)
+            self.image_label.setPixmap(pixmap)
+            # Simulação de análise (sem LLaVA)
+            result = "Imagem carregada. Para análise real, instale o LLaVA."
+            self.image_output.setText(result)
+            reply = self.agent.think(f"Análise de imagem: {result}")
+            self.text_output.setText(f"🖼️: {result}\n\nQueen: {reply}")
+            self.agent.speak_text(reply)
+
+    def create_workflow_tab(self):
+        widget = QWidget()
+        layout = QVBoxLayout()
+
+        self.workflow_desc = QLineEdit()
+        self.workflow_desc.setPlaceholderText("Ex: Gere um workflow para triagem de currículos")
+        layout.addWidget(self.workflow_desc)
+
+        btn_gen = QPushButton("🛠️ Gerar Workflow para n8n")
+        btn_gen.clicked.connect(self.generate_workflow)
+        layout.addWidget(btn_gen)
+
+        self.workflow_output = QTextEdit()
+        self.workflow_output.setReadOnly(True)
+        self.workflow_output.setStyleSheet("background: #313244; color: #b5e8e0; padding: 10px; font-family: monospace;")
+        layout.addWidget(self.workflow_output)
+
+        btn_import = QPushButton("⚡ Importar no n8n")
+        btn_import.clicked.connect(self.import_to_n8n_action)
+        layout.addWidget(btn_import)
+
+        widget.setLayout(layout)
+        return widget
+
+    def generate_workflow(self):
+        if not self.is_running:
+            return
+        desc = self.workflow_desc.text().strip()
+        if not desc:
+            return
+        self.workflow_output.setText("Gerando workflow com IA...")
+        def task():
+            prompt = f"Gere um JSON válido de workflow do n8n para: {desc}. Apenas JSON."
+            payload = {"model": "llama3", "prompt": prompt, "stream": False}
+            try:
+                response = requests.post(OLLAMA_URL, json=payload)
+                raw = response.json()["response"]
+                start = raw.find("{")
+                end = raw.rfind("}") + 1
+                return raw[start:end]
+            except:
+                return "{}"
+        self.run_in_thread(task, self.on_workflow_done)
+
+    def on_workflow_done(self, result):
+        self.workflow_output.setText(result)
+
+    def import_to_n8n_action(self):
+        if not self.is_running:
+            return
+        workflow_json = self.workflow_output.toPlainText()
+        if not workflow_json.strip():
+            QMessageBox.warning(self, "Erro", "Gere um workflow primeiro.")
+            return
+        result = self.agent.import_to_n8n(workflow_json)
+        QMessageBox.information(self, "Resultado", result)
+
+    def run_in_thread(self, target, on_done):
+        self.thread = WorkerThread(target)
+        self.thread.finished.connect(on_done)
+        self.thread.error.connect(lambda e: self.text_output.setText(f"Erro: {e}"))
+        self.thread.start()
+
+def main():
+    app = QApplication(sys.argv)
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec())
+
+if __name__ == "__main__":
+    main()
