@@ -1,0 +1,44 @@
+{
+  "ollama": {
+    "url": "http://localhost:11434/api/generate",
+    "default_model": "llama3",
+    "models": [
+      "phi-3:mini",
+      "llama3",
+      "mistral"
+    ]
+  },
+  "n8n": {
+    "url": "http://localhost:5678/api/v1",
+    "webhook_url": "http://localhost:5678/webhook"
+  },
+  "apis": {
+    "flux_ai": {
+      "url": "https://api.flux-ai.io/v1/generate",
+      "api_key": ""
+    },
+    "github": {
+      "token": "",
+      "repo": "meu-cerebro-digital"
+    }
+  },
+  "tts": {
+    "engine": "pyttsx3",
+    "rate": 150,
+    "volume": 0.9,
+    "voice": "portuguese"
+  },
+  "speech_recognition": {
+    "engine": "google",
+    "language": "pt-BR",
+    "timeout": 5
+  },
+  "ui": {
+    "theme": "dark",
+    "window_size": [
+      800,
+      600
+    ],
+    "auto_save": true
+  }
+}
