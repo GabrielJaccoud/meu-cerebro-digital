@@ -1,0 +1,8 @@
+PyQt6>=6.0
+requests
+speechrecognition
+pyaudio
+pyttsx3
+playsound
+pydub
+gitpython

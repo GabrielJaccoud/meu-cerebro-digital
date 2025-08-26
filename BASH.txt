@@ -1,0 +1,15 @@
+meu-cerebro-digital/
+├── app_queen.py          # Código principal do app
+├── main.py               # Ponto de entrada (para o .exe)
+├── queen_memory.db       # Banco de dados (pode estar vazio no início)
+├── requirements.txt      # Dependências Python
+├── README.md             # Documentação
+├── docs/
+│   ├── manual_de_instalacao.md
+│   └── n8n-autonomia-por-prompt.md
+├── workflows/            # Workflows do n8n
+│   └── exemplo.json
+├── whisper.cpp/          # Pasta do whisper.cpp (opcional, mas recomendado)
+├── llava/                # Pasta do llava (opcional)
+└── assets/
+    └── queen.ico         # Ícone do app
