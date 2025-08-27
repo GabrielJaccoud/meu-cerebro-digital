@@ -1,0 +1,179 @@
+{
+  "name": "Atendimento e Vendas Imobiliárias",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "path": "/atendimento-imobiliario",
+        "options": {}
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "llama3",
+        "prompt": "Você é um corretor de imóveis especialista. O cliente {{ $json.body.mensagem }} está interessado em um empreendimento. Analise a mensagem e extraia as seguintes informações: nome do cliente, tipo de imóvel (apartamento, casa, etc.), número de quartos, localização desejada e faixa de preço. Retorne um JSON com essas informações.",
+        "options": {}
+      },
+      "name": "Analisar Mensagem do Cliente",
+      "type": "n8n-nodes-base.ollama",
+      "typeVersion": 1,
+      "position": [
+        650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "application": "airtable",
+        "baseId": "seu_base_id",
+        "tableId": "seu_table_id",
+        "searchField": "Status",
+        "searchValue": "Disponível",
+        "options": {}
+      },
+      "name": "Buscar Imóveis Disponíveis",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 1,
+      "position": [
+        850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "llama3",
+        "prompt": "Com base nas preferências do cliente ({{ $json.body.mensagem }}) e nos imóveis disponíveis ({{ $json.data.records | json | dump }}), selecione os 3 melhores imóveis e gere uma mensagem personalizada para o cliente, incluindo detalhes dos imóveis e um convite para agendar uma visita.",
+        "options": {}
+      },
+      "name": "Gerar Resposta Personalizada",
+      "type": "n8n-nodes-base.ollama",
+      "typeVersion": 1,
+      "position": [
+        1050,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "{{ $json.body.chatId }}",
+        "text": "{{ $json.response }}",
+        "options": {}
+      },
+      "name": "Enviar Resposta ao Cliente",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        1250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "application": "airtable",
+        "baseId": "seu_base_id",
+        "tableId": "seu_table_id_leads",
+        "fields": {
+          "Nome": "{{ $json.body.nome }}",
+          "Contato": "{{ $json.body.chatId }}",
+          "Interesse": "{{ $json.body.mensagem }}",
+          "Status": "Contactado"
+        },
+        "options": {}
+      },
+      "name": "Registrar Lead",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 1,
+      "position": [
+        1450,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Analisar Mensagem do Cliente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analisar Mensagem do Cliente": {
+      "main": [
+        [
+          {
+            "node": "Buscar Imóveis Disponíveis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Imóveis Disponíveis": {
+      "main": [
+        [
+          {
+            "node": "Gerar Resposta Personalizada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gerar Resposta Personalizada": {
+      "main": [
+        [
+          {
+            "node": "Enviar Resposta ao Cliente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar Resposta ao Cliente": {
+      "main": [
+        [
+          {
+            "node": "Registrar Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
+
