@@ -1,0 +1,379 @@
+{
+  "name": "Atendimento e Vendas Mostardinha",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "path": "/whatsapp-mostardinha",
+        "options": {}
+      },
+      "name": "Webhook WhatsApp",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        450,
+        250
+      ]
+    },
+    {
+      "parameters": {
+        "path": "/site-contato",
+        "options": {}
+      },
+      "name": "Webhook Site Contato",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        450,
+        350
+      ]
+    },
+    {
+      "parameters": {
+        "values": [
+          {
+            "name": "customer_name",
+            "value": "={{ $json.body.name || $json.body.from || 'Cliente' }}"
+          },
+          {
+            "name": "customer_contact",
+            "value": "={{ $json.body.email || $json.body.from }}"
+          },
+          {
+            "name": "message_text",
+            "value": "={{ $json.body.message || $json.body.text }}"
+          },
+          {
+            "name": "source_channel",
+            "value": "={{ $json.body.from ? 'WhatsApp' : 'Site' }}"
+          }
+        ]
+      },
+      "name": "Normalizar Dados",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "model": "llama3",
+        "prompt": "Você é um assistente de IA para o livro 'Mostardinha'. Classifique a intenção da seguinte mensagem do cliente em uma das categorias: FAQ_Preco, FAQ_Conteudo, FAQ_Formato, Compra_Interesse, Suporte_Problema, Falar_Humano, Outro. Retorne apenas a categoria. Mensagem: \"{{ $json.message_text }}\"",
+        "options": {}
+      },
+      "name": "Classificar Intenção (Ollama)",
+      "type": "n8n-nodes-base.ollama",
+      "typeVersion": 1,
+      "position": [
+        850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": [
+          {
+            "value1": "={{ $json.response }}",
+            "value2": "FAQ_Preco"
+          }
+        ]
+      },
+      "name": "Se Intenção = Preço",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1050,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": [
+          {
+            "value1": "={{ $json.response }}",
+            "value2": "FAQ_Conteudo"
+          }
+        ]
+      },
+      "name": "Se Intenção = Conteúdo",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1050,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": [
+          {
+            "value1": "={{ $json.response }}",
+            "value2": "Compra_Interesse"
+          }
+        ]
+      },
+      "name": "Se Intenção = Compra",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1050,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{\n  json: {\n    message: `O livro Mostardinha custa R$ 34,99. Você pode comprar aqui: https://pay.hotmart.com/H100940670E`\n  }\n}];"
+      },
+      "name": "Formatar Resposta Preço",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1250,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{\n  json: {\n    message: `Mostardinha é um livro infantil que aborda temas socioemocionais. Para mais detalhes, visite nosso site: https://gabrieljaccoud.github.io/most2/`\n  }\n}];"
+      },
+      "name": "Formatar Resposta Conteúdo",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{\n  json: {\n    message: `Que ótimo! Você pode adquirir o livro Mostardinha diretamente pela Hotmart: https://pay.hotmart.com/H100940670E`\n  }\n}];"
+      },
+      "name": "Formatar Resposta Compra",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1250,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.customer_contact }}",
+        "text": "={{ $json.message }}",
+        "options": {}
+      },
+      "name": "Enviar WhatsApp",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        1450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "spreadsheetId": "seu_google_sheet_id",
+        "sheetName": "Leads",
+        "operation": "append",
+        "options": {},
+        "columnValues": {
+          "columnValues": [
+            {
+              "column": "Nome",
+              "value": "={{ $json.customer_name }}"
+            },
+            {
+              "column": "Contato",
+              "value": "={{ $json.customer_contact }}"
+            },
+            {
+              "column": "Mensagem",
+              "value": "={{ $json.message_text }}"
+            },
+            {
+              "column": "Canal",
+              "value": "={{ $json.source_channel }}"
+            },
+            {
+              "column": "Intenção",
+              "value": "={{ $json.response }}"
+            },
+            {
+              "column": "Data",
+              "value": "={{ new Date().toISOString() }}"
+            }
+          ]
+        }
+      },
+      "name": "Registrar Lead (Google Sheets)",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 1,
+      "position": [
+        1650,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Webhook WhatsApp",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Webhook Site Contato",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Normalizar Dados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Site Contato": {
+      "main": [
+        [
+          {
+            "node": "Normalizar Dados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar Dados": {
+      "main": [
+        [
+          {
+            "node": "Classificar Intenção (Ollama)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classificar Intenção (Ollama)": {
+      "main": [
+        [
+          {
+            "node": "Se Intenção = Preço",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Se Intenção = Conteúdo",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Se Intenção = Compra",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Se Intenção = Preço": {
+      "main": [
+        [
+          {
+            "node": "Formatar Resposta Preço",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Se Intenção = Conteúdo": {
+      "main": [
+        [
+          {
+            "node": "Formatar Resposta Conteúdo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Se Intenção = Compra": {
+      "main": [
+        [
+          {
+            "node": "Formatar Resposta Compra",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatar Resposta Preço": {
+      "main": [
+        [
+          {
+            "node": "Enviar WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatar Resposta Conteúdo": {
+      "main": [
+        [
+          {
+            "node": "Enviar WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatar Resposta Compra": {
+      "main": [
+        [
+          {
+            "node": "Enviar WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Registrar Lead (Google Sheets)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
+
